@@ -86,29 +86,24 @@ function BlockNoteTab({ content, onNavigateWikilink }: { content: string; onNavi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body])
 
-  // Intercept link clicks for wikilinks
+  // Intercept link clicks for wikilinks — use document-level capture to beat BlockNote/browser
   useEffect(() => {
-    const container = document.querySelector('.bn-container')
-    if (!container) return
-    const handler = (e: Event) => {
-      const target = (e as MouseEvent).target as HTMLElement
-      const link = target.closest('a')
+    const handler = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement).closest?.('a')
       if (!link) return
       const href = link.getAttribute('href') || ''
-      if (href && href.startsWith('https://wikilink.internal/')) {
+      if (href.startsWith('https://wikilink.internal/')) {
         e.preventDefault()
         e.stopPropagation()
-        const target = decodeURIComponent(href.replace('https://wikilink.internal/', ''))
-        navigateRef.current(target)
-      } else if (href && !href.startsWith('http://') && !href.startsWith('https://')) {
-        e.preventDefault()
-        e.stopPropagation()
-        navigateRef.current(href)
+        e.stopImmediatePropagation()
+        const wikiTarget = decodeURIComponent(href.replace('https://wikilink.internal/', ''))
+        navigateRef.current(wikiTarget)
       }
     }
-    container.addEventListener('click', handler, true)
-    return () => container.removeEventListener('click', handler, true)
-  }, [editor])
+    // Capture phase on document to intercept before anything else
+    document.addEventListener('click', handler, true)
+    return () => document.removeEventListener('click', handler, true)
+  }, [])
 
   const isDark = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') !== 'light'
 
