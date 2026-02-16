@@ -56,7 +56,7 @@
     "nestedBulletSymbols": ["•", "◦", "▪"]
   },
   "checkboxes": {
-    "size": 16,
+    "size": 20,
     "borderRadius": 3,
     "checkedColor": "var(--accent-blue)",
     "uncheckedBorderColor": "var(--text-muted)"
