@@ -226,13 +226,18 @@ fn build_chat_args(req: &ChatStreamRequest) -> Vec<String> {
 }
 
 /// Spawn `claude -p` with full tool access and MCP vault tools for an agent task.
-pub fn run_agent_stream<F>(req: AgentStreamRequest, mut emit: F) -> Result<String, String>
+pub fn run_agent_stream<F>(mut req: AgentStreamRequest, mut emit: F) -> Result<String, String>
 where
     F: FnMut(ClaudeStreamEvent),
 {
+    normalize_agent_request(&mut req);
     let bin = find_claude_binary()?;
     let args = build_agent_args(&req)?;
     run_claude_subprocess(&bin, &args, Some(&req.vault_path), &mut emit)
+}
+
+fn normalize_agent_request(req: &mut AgentStreamRequest) {
+    req.vault_path = crate::commands::expand_tilde(&req.vault_path).into_owned();
 }
 
 /// Build CLI arguments for an agent stream request.
@@ -1199,6 +1204,32 @@ mod tests {
         let result = run_claude_subprocess(&fake_bin, &[], None, &mut |e| events.push(e));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to spawn"));
+    }
+
+    #[test]
+    fn normalize_agent_request_expands_tilde_vault_path() {
+        let home = dirs::home_dir().expect("home dir available in test env");
+        let mut req = AgentStreamRequest {
+            message: "ignored".into(),
+            system_prompt: None,
+            vault_path: "~/Documents/vault".into(),
+        };
+        normalize_agent_request(&mut req);
+        assert_eq!(
+            req.vault_path,
+            home.join("Documents").join("vault").to_string_lossy(),
+        );
+    }
+
+    #[test]
+    fn normalize_agent_request_leaves_absolute_paths_intact() {
+        let mut req = AgentStreamRequest {
+            message: "ignored".into(),
+            system_prompt: None,
+            vault_path: "/var/data/vault".into(),
+        };
+        normalize_agent_request(&mut req);
+        assert_eq!(req.vault_path, "/var/data/vault");
     }
 
     #[cfg(unix)]

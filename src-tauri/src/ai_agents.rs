@@ -66,10 +66,18 @@ pub fn get_ai_agents_status() -> AiAgentsStatus {
     }
 }
 
-pub fn run_ai_agent_stream<F>(request: AiAgentStreamRequest, mut emit: F) -> Result<String, String>
+fn normalize_ai_agent_request(request: &mut AiAgentStreamRequest) {
+    request.vault_path = crate::commands::expand_tilde(&request.vault_path).into_owned();
+}
+
+pub fn run_ai_agent_stream<F>(
+    mut request: AiAgentStreamRequest,
+    mut emit: F,
+) -> Result<String, String>
 where
     F: FnMut(AiAgentStreamEvent),
 {
+    normalize_ai_agent_request(&mut request);
     match request.agent {
         AiAgentId::ClaudeCode => {
             let mapped = crate::claude_cli::AgentStreamRequest {
@@ -404,6 +412,34 @@ mod tests {
         let status = get_ai_agents_status();
         assert!(matches!(status.claude_code.installed, true | false));
         assert!(matches!(status.codex.installed, true | false));
+    }
+
+    #[test]
+    fn normalize_ai_agent_request_expands_tilde_vault_path() {
+        let home = dirs::home_dir().expect("home dir available in test env");
+        let mut request = AiAgentStreamRequest {
+            agent: AiAgentId::ClaudeCode,
+            message: "ignored".into(),
+            system_prompt: None,
+            vault_path: "~/Vaults/work".into(),
+        };
+        normalize_ai_agent_request(&mut request);
+        assert_eq!(
+            request.vault_path,
+            home.join("Vaults").join("work").to_string_lossy(),
+        );
+    }
+
+    #[test]
+    fn normalize_ai_agent_request_leaves_absolute_paths_intact() {
+        let mut request = AiAgentStreamRequest {
+            agent: AiAgentId::Codex,
+            message: "ignored".into(),
+            system_prompt: None,
+            vault_path: "/var/data/vault".into(),
+        };
+        normalize_ai_agent_request(&mut request);
+        assert_eq!(request.vault_path, "/var/data/vault");
     }
 
     #[test]
