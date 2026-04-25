@@ -287,6 +287,20 @@ where
                 });
             }
         }
+        "error" => {
+            if let Some(message) = json["message"].as_str() {
+                emit(AiAgentStreamEvent::Error {
+                    message: message.to_string(),
+                });
+            }
+        }
+        "turn.failed" => {
+            if let Some(message) = json["error"]["message"].as_str() {
+                emit(AiAgentStreamEvent::Error {
+                    message: message.to_string(),
+                });
+            }
+        }
         "item.started" => emit_codex_item_event(json, false, emit),
         "item.completed" => emit_codex_item_event(json, true, emit),
         _ => {}
@@ -471,6 +485,39 @@ mod tests {
         assert!(matches!(
             &events[0],
             AiAgentStreamEvent::TextDelta { text } if text == "All set"
+        ));
+    }
+
+    #[test]
+    fn dispatch_codex_error_event_maps_to_error() {
+        let mut events = Vec::new();
+        let error = serde_json::json!({
+            "type": "error",
+            "message": "The configured model requires a newer Codex CLI."
+        });
+
+        dispatch_codex_event(&error, &mut |event| events.push(event));
+
+        assert!(matches!(
+            &events[0],
+            AiAgentStreamEvent::Error { message }
+                if message == "The configured model requires a newer Codex CLI."
+        ));
+    }
+
+    #[test]
+    fn dispatch_codex_turn_failed_event_maps_to_error() {
+        let mut events = Vec::new();
+        let failed = serde_json::json!({
+            "type": "turn.failed",
+            "error": { "message": "unexpected status 400 Bad Request" }
+        });
+
+        dispatch_codex_event(&failed, &mut |event| events.push(event));
+
+        assert!(matches!(
+            &events[0],
+            AiAgentStreamEvent::Error { message } if message == "unexpected status 400 Bad Request"
         ));
     }
 

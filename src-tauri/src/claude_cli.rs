@@ -440,10 +440,16 @@ where
                 state.session_id = sid.clone();
             }
             let text = json["result"].as_str().unwrap_or("").to_string();
-            emit(ClaudeStreamEvent::Result {
-                text,
-                session_id: sid,
-            });
+            if json["is_error"].as_bool() == Some(true) {
+                emit(ClaudeStreamEvent::Error {
+                    message: format_claude_result_error(json, &text),
+                });
+            } else {
+                emit(ClaudeStreamEvent::Result {
+                    text,
+                    session_id: sid,
+                });
+            }
         }
 
         // --- Complete assistant message (fallback for text when no partials) ---
@@ -467,6 +473,25 @@ where
         }
 
         _ => {} // ignore other event types
+    }
+}
+
+fn format_claude_result_error(json: &serde_json::Value, result_text: &str) -> String {
+    let trimmed = result_text.trim();
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+
+    if let Some(error) = json["error"]
+        .as_str()
+        .filter(|error| !error.trim().is_empty())
+    {
+        return error.trim().to_string();
+    }
+
+    match json["api_error_status"].as_i64() {
+        Some(status) => format!("Claude CLI API request failed with status {status}"),
+        None => "Claude CLI request failed".into(),
     }
 }
 
@@ -687,6 +712,35 @@ mod tests {
         assert_eq!(sid, "sess-456");
         assert!(
             matches!(&events[0], ClaudeStreamEvent::Result { text, session_id } if text == "All done!" && session_id == "sess-456")
+        );
+    }
+
+    #[test]
+    fn dispatch_event_handles_error_result() {
+        let (sid, events) = run_dispatch(serde_json::json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": true,
+            "api_error_status": 400,
+            "result": "Credit balance is too low",
+            "session_id": "sess-err"
+        }));
+        assert_eq!(sid, "sess-err");
+        assert!(
+            matches!(&events[0], ClaudeStreamEvent::Error { message } if message == "Credit balance is too low")
+        );
+    }
+
+    #[test]
+    fn dispatch_event_error_result_falls_back_to_status() {
+        let (_, events) = run_dispatch(serde_json::json!({
+            "type": "result",
+            "is_error": true,
+            "api_error_status": 429,
+            "result": ""
+        }));
+        assert!(
+            matches!(&events[0], ClaudeStreamEvent::Error { message } if message.contains("429"))
         );
     }
 
